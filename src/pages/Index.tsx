@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   type Language,
   type Mode,
@@ -17,16 +18,20 @@ import {
   ALL_MODES,
 } from "@/lib/languageEngine";
 import ChatMessage from "@/components/ChatMessage";
+import TypingIndicator from "@/components/TypingIndicator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send } from "lucide-react";
+import { Send, Globe, Flame, RotateCcw } from "lucide-react";
 
 const initialQuizState: QuizState = {
   currentItem: null,
   currentPhrase: null,
   score: 0,
   total: 0,
+  streak: 0,
+  bestStreak: 0,
   usedIndices: [],
+  difficulty: "easy",
 };
 
 let msgId = 0;
@@ -42,11 +47,20 @@ export default function Index() {
   const [language, setLanguage] = useState<Language | null>(null);
   const [mode, setMode] = useState<Mode | null>(null);
   const [quiz, setQuiz] = useState<QuizState>(initialQuizState);
+  const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isTyping]);
+
+  const addBotWithDelay = useCallback((text: string, delay = 600) => {
+    setIsTyping(true);
+    setTimeout(() => {
+      setIsTyping(false);
+      setMessages((prev) => [...prev, makeMsg(text, "bot")]);
+    }, delay);
+  }, []);
 
   const addBot = useCallback((text: string) => {
     setMessages((prev) => [...prev, makeMsg(text, "bot")]);
@@ -59,28 +73,29 @@ export default function Index() {
     setMessages((prev) => [
       ...prev,
       makeMsg(getLanguageLabel(lang), "user"),
-      makeMsg(`Great choice! You're learning ${getLanguageLabel(lang)}.\n\nNow pick a practice mode:`,"bot"),
     ]);
+    addBotWithDelay(`Great choice! You're learning ${getLanguageLabel(lang)}.\n\nNow pick a practice mode:`);
   };
 
   const selectMode = (m: Mode) => {
     if (!language) return;
     setMode(m);
     setQuiz(initialQuizState);
-    setMessages((prev) => [...prev, makeMsg(`${ALL_MODES.find((x) => x.id === m)?.icon} ${ALL_MODES.find((x) => x.id === m)?.label}`, "user")]);
+    const modeObj = ALL_MODES.find((x) => x.id === m);
+    setMessages((prev) => [...prev, makeMsg(`${modeObj?.icon} ${modeObj?.label}`, "user")]);
 
     if (m === "vocab") {
       const { message, newState } = startVocabQuiz(language, initialQuizState);
       setQuiz(newState);
-      addBot(message);
+      addBotWithDelay(message);
     } else if (m === "grammar") {
-      addBot(getGrammarTip(language));
+      addBotWithDelay(getGrammarTip(language));
     } else if (m === "translate") {
       const { message, newState } = startTranslateQuiz(language, initialQuizState);
       setQuiz(newState);
-      addBot(message);
+      addBotWithDelay(message);
     } else {
-      addBot(`💬 Free chat mode! Type anything and I'll respond with useful ${getLanguageLabel(language)} phrases and tips.\n\nType **"back"** anytime to switch modes.`);
+      addBotWithDelay(`💬 Free chat mode! Type anything and I'll respond with useful ${getLanguageLabel(language)} phrases and tips.\n\nType **"back"** anytime to switch modes.`);
     }
   };
 
@@ -95,20 +110,18 @@ export default function Index() {
     setInput("");
     setMessages((prev) => [...prev, makeMsg(text, "user")]);
 
-    // Handle "back" command
     if (text.toLowerCase() === "back") {
       setMode(null);
       setQuiz(initialQuizState);
-      addBot("Sure! Pick a mode:");
+      addBotWithDelay("Sure! Pick a mode:");
       return;
     }
 
-    // Handle "switch" to change language
     if (text.toLowerCase() === "switch") {
       setLanguage(null);
       setMode(null);
       setQuiz(initialQuizState);
-      addBot("Pick a new language:");
+      addBotWithDelay("Pick a new language:");
       return;
     }
 
@@ -121,109 +134,162 @@ export default function Index() {
       if (quiz.currentItem) {
         const { message, newState } = checkVocabAnswer(text, quiz);
         setQuiz(newState);
-        addBot(message);
-        // Auto-next question
+        addBotWithDelay(message, 400);
         setTimeout(() => {
           const { message: next, newState: ns } = startVocabQuiz(language, newState);
           setQuiz(ns);
-          addBot(next);
-        }, 1200);
+          addBotWithDelay(next, 800);
+        }, 1400);
       } else {
         const { message, newState } = startVocabQuiz(language, { ...quiz, usedIndices: [] });
         setQuiz(newState);
-        addBot(message);
+        addBotWithDelay(message);
       }
     } else if (mode === "grammar") {
       if (text.toLowerCase() === "more") {
-        addBot(getGrammarTip(language));
+        addBotWithDelay(getGrammarTip(language));
       } else {
-        addBot(`I hear you! Here's what I know:\n\n${getGrammarTip(language).replace("📝 **Grammar Tip:**\n\n", "")}\n\nType **"more"** for another tip.`);
+        addBotWithDelay(`I hear you! Here's what I know:\n\n${getGrammarTip(language).replace("📝 **Grammar Tip:**\n\n", "")}\n\nType **"more"** for another tip.`);
       }
     } else if (mode === "translate") {
       if (quiz.currentPhrase) {
         const { message, newState } = checkTranslateAnswer(text, quiz);
         setQuiz(newState);
-        addBot(message);
+        addBotWithDelay(message, 400);
         setTimeout(() => {
           const { message: next, newState: ns } = startTranslateQuiz(language, newState);
           setQuiz(ns);
-          addBot(next);
-        }, 1200);
+          addBotWithDelay(next, 800);
+        }, 1400);
       } else {
         const { message, newState } = startTranslateQuiz(language, { ...quiz, usedIndices: [] });
         setQuiz(newState);
-        addBot(message);
+        addBotWithDelay(message);
       }
     } else {
-      addBot(getChatResponse(language));
+      addBotWithDelay(getChatResponse(language));
     }
   };
 
   const showLangPicker = !language;
   const showModePicker = language && !mode;
+  const scorePercent = quiz.total > 0 ? Math.round((quiz.score / quiz.total) * 100) : 0;
 
   return (
-    <div className="flex flex-col h-screen max-w-2xl mx-auto">
+    <div className="flex flex-col h-screen max-w-2xl mx-auto bg-background">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b bg-card">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">🌍</span>
-          <h1 className="text-lg font-semibold text-card-foreground">Language Buddy</h1>
+      <header className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
+            <Globe className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-base font-bold text-card-foreground leading-tight">Language Buddy</h1>
+            {language && (
+              <p className="text-xs text-muted-foreground">{getLanguageLabel(language)} {mode && `· ${ALL_MODES.find((m) => m.id === mode)?.label}`}</p>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {language && (
-            <button onClick={() => { setLanguage(null); setMode(null); setQuiz(initialQuizState); addBot("Pick a new language:"); }}
-              className="px-2 py-1 rounded-md bg-secondary text-secondary-foreground hover:opacity-80 transition-opacity">
-              {getLanguageLabel(language)}
-            </button>
-          )}
-          {mode && (
-            <button onClick={() => { setMode(null); setQuiz(initialQuizState); addBot("Pick a mode:"); }}
-              className="px-2 py-1 rounded-md bg-secondary text-secondary-foreground hover:opacity-80 transition-opacity">
-              {ALL_MODES.find((m) => m.id === mode)?.icon} {ALL_MODES.find((m) => m.id === mode)?.label}
-            </button>
+        <div className="flex items-center gap-2">
+          {quiz.streak >= 3 && (
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="flex items-center gap-1 px-2 py-1 rounded-full bg-destructive/10 text-destructive text-xs font-semibold"
+            >
+              <Flame className="w-3.5 h-3.5" />
+              {quiz.streak}
+            </motion.div>
           )}
           {quiz.total > 0 && (
-            <span className="px-2 py-1 rounded-md bg-primary/10 text-primary font-medium">
-              {quiz.score}/{quiz.total}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${scorePercent}%` }}
+                  transition={{ duration: 0.4 }}
+                />
+              </div>
+              <span className="text-xs font-medium text-muted-foreground">
+                {quiz.score}/{quiz.total}
+              </span>
+            </div>
+          )}
+          {language && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => {
+                setLanguage(null);
+                setMode(null);
+                setQuiz(initialQuizState);
+                addBot("Pick a new language:");
+              }}
+            >
+              <RotateCcw className="w-4 h-4" />
+            </Button>
           )}
         </div>
       </header>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {messages.map((msg) => (
-          <ChatMessage key={msg.id} message={msg} />
-        ))}
+        <AnimatePresence>
+          {messages.map((msg) => (
+            <ChatMessage key={msg.id} message={msg} />
+          ))}
+        </AnimatePresence>
 
         {/* Language picker */}
         {showLangPicker && (
-          <div className="flex flex-wrap gap-2 mt-2 justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-wrap gap-2 mt-3 justify-center"
+          >
             {ALL_LANGUAGES.map((lang) => (
-              <Button key={lang} variant="outline" size="sm" onClick={() => selectLanguage(lang)}>
+              <Button
+                key={lang}
+                variant="outline"
+                size="sm"
+                onClick={() => selectLanguage(lang)}
+                className="rounded-xl border-border/80 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+              >
                 {getLanguageLabel(lang)}
               </Button>
             ))}
-          </div>
+          </motion.div>
         )}
 
         {/* Mode picker */}
         {showModePicker && (
-          <div className="flex flex-wrap gap-2 mt-2 justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="grid grid-cols-2 gap-2 mt-3 max-w-xs mx-auto"
+          >
             {ALL_MODES.map((m) => (
-              <Button key={m.id} variant="outline" size="sm" onClick={() => selectMode(m.id)}>
-                {m.icon} {m.label}
+              <Button
+                key={m.id}
+                variant="outline"
+                onClick={() => selectMode(m.id)}
+                className="rounded-xl h-auto py-3 flex-col gap-1 border-border/80 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+              >
+                <span className="text-xl">{m.icon}</span>
+                <span className="text-xs font-medium">{m.label}</span>
               </Button>
             ))}
-          </div>
+          </motion.div>
         )}
 
+        <AnimatePresence>{isTyping && <TypingIndicator />}</AnimatePresence>
         <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div className="border-t bg-card px-4 py-3">
+      <div className="border-t border-border/60 bg-card/80 backdrop-blur-sm px-4 py-3">
         <form
           onSubmit={(e) => { e.preventDefault(); handleSend(); }}
           className="flex gap-2"
@@ -232,14 +298,14 @@ export default function Index() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={mode ? "Type your answer..." : "Select a language & mode above"}
-            className="flex-1"
+            className="flex-1 rounded-xl bg-background border-border/60"
           />
-          <Button type="submit" size="icon" className="shrink-0">
+          <Button type="submit" size="icon" className="shrink-0 rounded-xl">
             <Send className="h-4 w-4" />
           </Button>
         </form>
-        <p className="text-xs text-muted-foreground mt-1.5 text-center">
-          Type <strong>"back"</strong> to switch modes · <strong>"switch"</strong> to change language
+        <p className="text-[11px] text-muted-foreground mt-1.5 text-center">
+          <strong>"back"</strong> switch modes · <strong>"switch"</strong> change language
         </p>
       </div>
     </div>
